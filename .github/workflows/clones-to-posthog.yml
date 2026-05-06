@@ -12,7 +12,6 @@ on:
 
 permissions:
   contents: read
-  administration: read
 
 jobs:
   push:
@@ -20,7 +19,11 @@ jobs:
     steps:
       - name: Push clone stats to PostHog
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN cannot read the traffic API (needs `Administration:
+          # Read`, which isn't an available workflow permission scope). Set
+          # TRAFFIC_TOKEN as a repo secret with a fine-grained PAT scoped to
+          # this repo with Administration: Read. See README.md "Analytics".
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           BACKFILL: ${{ inputs.backfill }}
