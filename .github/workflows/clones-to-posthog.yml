@@ -1,0 +1,71 @@
+name: Push Homebrew tap clone stats to PostHog
+
+on:
+  schedule:
+    - cron: "17 2 * * *" # 02:17 UTC daily
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Backfill all available days (up to 14)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push clone stats to PostHog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          BACKFILL: ${{ inputs.backfill }}
+        run: |
+          set -euo pipefail
+          repo="${GITHUB_REPOSITORY}"
+          data=$(gh api "repos/${repo}/traffic/clones")
+          if [ "${BACKFILL:-false}" = "true" ]; then
+            rows=$(echo "$data" | jq -c '.clones[]? | select(.count > 0)')
+          else
+            yesterday=$(date -u -d 'yesterday' +%Y-%m-%dT00:00:00Z)
+            rows=$(echo "$data" | jq -c --arg ts "$yesterday" '.clones[]? | select(.timestamp == $ts and .count > 0)')
+          fi
+          if [ -z "$rows" ]; then
+            echo "Nothing to push."
+            exit 0
+          fi
+          echo "$rows" | while IFS= read -r row; do
+            ts=$(echo "$row" | jq -r '.timestamp')
+            count=$(echo "$row" | jq '.count')
+            uniques=$(echo "$row" | jq '.uniques')
+            insert_id=$(printf "homebrew-tap-%s-%s" "$repo" "$ts" | sha256sum | awk '{print $1}')
+            body=$(jq -n \
+              --arg key "$POSTHOG_KEY" \
+              --arg ts "$ts" \
+              --arg repo "$repo" \
+              --arg insert_id "$insert_id" \
+              --argjson count "$count" \
+              --argjson uniques "$uniques" \
+              '{
+                api_key: $key,
+                event: "homebrew_tap_daily",
+                distinct_id: ("homebrew-tap-" + $ts),
+                timestamp: $ts,
+                properties: {
+                  surface_app: "homebrew_tap",
+                  tap_repo: $repo,
+                  day: $ts,
+                  day_clone_count: $count,
+                  day_unique_count: $uniques,
+                  "$insert_id": $insert_id,
+                  "$lib": "homebrew-tap-cron"
+                }
+              }')
+            curl -fsS -X POST "${POSTHOG_HOST}/i/v0/e/" \
+              -H "content-type: application/json" \
+              -d "$body" >/dev/null
+            echo "Pushed: day=$ts count=$count uniques=$uniques"
+          done
