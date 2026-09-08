@@ -1,6 +1,6 @@
 cask "codexisland" do
-  version "0.1.23"
-  sha256 "cd5d4cb90917fc20cc7c189a333cec79a03fae274dde357638158356a1a897b0"
+  version "0.2.0"
+  sha256 "f3298443a7d6eaac029b3cab01aabd7783197f63beb1f35db2bd8b11fe71793b"
 
   url "https://github.com/ericjypark/codex-island/releases/download/v#{version}/CodexIsland-#{version}.dmg"
   name "CodexIsland"
